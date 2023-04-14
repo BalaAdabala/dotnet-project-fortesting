@@ -14,7 +14,7 @@ jobs:
       uses: docker/build-push-action@v2
       with:
         context: .
-        file: Dockerfile
+        file: app/Dockerfile
         push: false
         tags: sampleapp001:latest
 
