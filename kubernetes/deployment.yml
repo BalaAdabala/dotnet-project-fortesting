@@ -1,0 +1,45 @@
+apiVersion : apps/v1
+kind: Deployment
+metadata:
+  name: sampleapp 
+spec:
+  replicas: #replicaNo#
+  selector:
+    matchLabels:
+      app: sampleapp
+  template:
+    metadata:
+      labels:
+        app: sampleapp 
+    spec:
+      containers:
+        - name: sampleapp 
+          image: balavenkat6871/balaacr05oct:latest
+          ports:
+          - containerPort: 80
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: coder-ingress
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /$1
+spec:
+  ingressClassName: nginx
+  rules:
+  - http:
+      paths:
+      - path: /coderdave(.*)
+        pathType: Prefix
+        backend:
+          service:
+            name: sampleapp
+            port:
+              number: 80
+      - path: /(.*)
+        pathType: Prefix
+        backend:
+          service:
+            name: sampleapp
+            port:
+              number: 80

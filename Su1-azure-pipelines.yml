@@ -1,0 +1,74 @@
+# Deploy to Azure Kubernetes Service
+# Build and push image to Azure Container Registry; Deploy to Azure Kubernetes Service
+# https://docs.microsoft.com/azure/devops/pipelines/languages/docker
+
+trigger:
+- main
+
+resources:
+- repo: self
+variables:
+  vmImageName: 'ubuntu-latest'
+  imageRepo: 'webappimage'
+  tag: '$(Build.BuildId)'
+  myacrsecret: "myacrsecret001"
+  acrdevurl: 'balaacr05oct.azurecr.io'
+
+stages:
+- stage: Build
+  displayName: Build stage
+  jobs:
+  - job: Build
+    displayName: Build
+    pool:
+      vmImage: $(vmImageName)
+    steps:
+    - task: Docker@2
+      inputs:
+        containerRegistry: 'bala-acr-SC'
+        repository: '$(imageRepo)'
+        command: 'buildAndPush'
+        Dockerfile: '**/Dockerfile'
+        tags: '$(tag)'
+    - task: CopyFiles@2
+      inputs:
+        SourceFolder: 'kubernetes'
+        Contents: '**'
+        TargetFolder: '$(Pipeline.Workspace)/manifests'
+    - task: PublishBuildArtifacts@1
+      inputs:
+        PathtoPublish: '$(Pipeline.Workspace)/manifests'
+        ArtifactName: 'manifests'
+        publishLocation: 'Container'
+
+- stage: Deploy
+  displayName: Deploy stage
+  jobs:
+  - job: Deploy
+    displayName: Deploy
+    pool:
+        vmImage: $(vmImageName)
+    steps:
+    - task: DownloadPipelineArtifact@2
+      inputs:
+        buildType: 'current'
+        artifactName: 'manifests'
+        targetPath: '$(Pipeline.Workspace)/manifests'
+    - task: KubernetesManifest@0
+      inputs:
+        action: 'createSecret'
+        kubernetesServiceConnection: 'K8S-Dev-SC'
+        namespace: 'dev'
+        secretType: 'dockerRegistry'
+        secretName: '$(myacrsecret)'
+        dockerRegistryEndpoint: 'bala-acr-SC'
+    - task: KubernetesManifest@0
+      inputs:
+        action: 'deploy'
+        kubernetesServiceConnection: 'K8S-Dev-SC'
+        namespace: 'dev'
+        manifests: |
+          $(Pipeline.Workspace)/manifests/deployment.yml 
+          $(Pipeline.Workspace)/manifests/service.yml
+        containers: '$(acrdevurl)/$(imageRepo):$(tag)'
+        imagePullSecrets: '$(myacrsecret)'

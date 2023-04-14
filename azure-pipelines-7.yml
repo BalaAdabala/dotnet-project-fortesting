@@ -1,0 +1,58 @@
+trigger:
+- none
+
+resources:
+- repo: self
+
+variables:
+  imageRepository: 'amimagescantrivy'
+  containerRegistry: 'formytrivytesting'
+  storageaccount: 'mytrivytesting'
+  resourcegroup: 'Feb18'
+  sacontainername: 'trivy-scan-reports1'
+  serviceconn: 'Trivy-ACR-Serviceconnection' 
+  target: $(build.artifactstagingdirectory)
+  artifact: AM
+  tag: '$(Build.BuildId)'
+
+  vmImageName: 'ubuntu-latest'
+
+stages:
+- stage: BUILD
+  displayName: Build and Push Stage
+  jobs:
+  - job: BUILD_JOB
+    displayName: BUILD IMAGE
+    pool:
+      vmImage: $(vmImageName)
+    steps:
+
+    - task: Docker@2
+      displayName: BUILD AND PUSH IMAGE TO ACR
+      inputs:
+        containerRegistry: 'Trivy-ACR-Serviceconnection'
+        repository: '$(imageRepository)'
+        command: 'buildandpush'
+        Dockerfile: '**/Dockerfile'
+        tags: '$(tag)'
+######### Download and Install Aquasec Trivy:-
+# - stage: SCAN
+#   displayName: SCAN
+#   jobs:
+#   - job: PS1_JOB
+#     displayName: PS1
+#     steps:
+    - task: DownloadSecureFile@1
+      name: mySecureFile
+      inputs:
+        secureFile: 'ImageScanSummaryAssessmentGate.ps1'
+
+    - script: |
+        echo $(mySecureFile.secureFilePath)
+    - task: AzureCLI@2
+      inputs:
+        azureSubscription: 'Visual Studio Professional Subscription (5fc882d3-d809-4f5a-b226-77aad2cbde21)'
+        scriptType: 'pscore'
+        scriptLocation: 'scriptPath'
+        scriptPath: '$(Build.SourcesDirectory)/ImageScanSummaryAssessmentGate.ps1'
+        arguments: '-registryName $(containerRegistry) -repository $(imageRepository) -tag $(tag)'

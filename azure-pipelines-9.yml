@@ -1,0 +1,67 @@
+trigger:
+- none
+
+resources:
+- repo: self
+
+variables:
+  imageRepository: 'amimagescantrivy'
+  containerRegistry: 'formytrivytesting.azurecr.io'
+  storageaccount: 'mytrivytesting'
+  resourcegroup: 'Feb18'
+  sacontainername: 'trivy-scan-reports1'
+  serviceconn: 'Trivy-ACR-Serviceconnection' 
+  target: $(build.artifactstagingdirectory)
+  artifact: AM
+  tag: '$(Build.BuildId)'
+
+  vmImageName: 'ubuntu-latest'
+
+stages:
+- stage: BUILD
+  displayName: Build and Push Stage
+  jobs:
+  - job: BUILD_JOB
+    displayName: BUILD IMAGE
+    pool:
+      vmImage: $(vmImageName)
+    steps:
+
+    - task: Docker@2
+      displayName: BUILD AND PUSH IMAGE TO ACR
+      inputs:
+        containerRegistry: 'Trivy-ACR-Serviceconnection'
+        repository: '$(imageRepository)'
+        command: 'build'
+        Dockerfile: '**/Dockerfile'
+        tags: '$(tag)'
+
+######### Download and Install Aquasec Trivy:-
+- stage: Scan
+  displayName: 'Scan container image for vulnerabilities'
+  dependsOn: Build
+  jobs:
+    - job: ScanImage
+      displayName: 'Scan container image using Aqua Security'
+      pool:
+        vmImage: 'ubuntu-latest'
+      steps:
+        # Pull Docker image from container registry
+        - task: Docker@2
+          displayName: 'Pull Docker image'
+          inputs:
+            command: 'pull'
+            containerRegistry: 'Trivy-ACR-Serviceconnection'
+            repository: $(imageRepository)
+            dockerFile: '**/Dockerfile'
+            tags: '$(tag)'
+
+        # Scan Docker image using Aqua Security
+        - task: AquaSecurityImageScanning@2
+          displayName: 'Scan Docker image using Aqua Security'
+          inputs:
+            registry: $(aqua_registry_url)
+            repository: $(container_image_name)
+            tag: $(container_image_tag)
+            token: $(aqua_api_token)
+            failBuildOnHighSeverity: true

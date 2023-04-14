@@ -1,0 +1,103 @@
+trigger:
+  branches:
+      include:
+      - main
+  paths:
+    include:
+    - app/SampleWebApp/*
+    - kubernetes/*
+    - azure-pipelines.yml
+pool:
+  vmImage: ubuntu-latest
+  
+variables:
+  - group: my-vars
+  - name: Database
+    value: $(MAIN_AUTHENTICATION_DATABASE_DB)
+  - name: Database-UserId
+    value: $(MAIN_AUTHENTICATION_DB_USER)
+    vmImageName: 'ubuntu-latest'
+    imageRepo: 'webappimage'
+    tag: '$(Build.BuildId)'
+    myacrsecret: "myacrsecret001"
+    acrdevurl: 'balaacr05oct.azurecr.io'
+
+stages:
+- stage: CI
+  jobs:
+  - job: publish
+    displayName: Publish image
+    continueOnError: false
+    steps:
+    - task: Docker@2
+      displayName: Build Docker image
+      inputs:
+        containerRegistry: 'bala-acr-SC'
+        repository: 'balaacr05oct'
+        command: 'build'
+        Dockerfile: '**/Dockerfile'
+        tags: |
+          $(Build.BuildId)
+          latest
+    - task: Docker@2
+      displayName: Push Docker image to ACR
+      inputs:
+        containerRegistry: 'bala-acr-SC'
+        repository: 'balaacr05oct'
+        command: 'push'
+        tags: |
+          $(Build.BuildId)
+          latest
+- stage: Main
+  jobs:
+  - deployment: Deploy
+    displayName: Deploy to Main
+    environment: 'Main'
+    variables:
+    - name: k8s-replicas
+      value: 0
+    - name: container-fqdn
+      value: $(MAIN_AUTHENTICATION_CONTAINER_FQDN)
+    continueOnError: false
+    strategy:
+     runOnce:
+       deploy:
+        steps:
+        - checkout: self
+        - task: KubernetesManifest@0
+          displayName: Create secret
+          inputs:
+            kubernetesServiceConnection: 'K8S-Dev-SC'
+            namespace: main
+            action: createSecret
+            secretType: generic
+            secretName: auth-service-secrets
+            secretArguments:
+              --from-literal=ASPNETCORE_ENVIRONMENT='Main'
+              --from-literal=Database=$(MAIN_AUTHENTICATION_DATABASE_DB)
+              --from-literal=Database-UserId=$(MAIN_AUTHENTICATION_DB_USER)
+              --from-literal=LoggingLogLevel-Default=Debug
+
+		- task: DownloadPipelineArtifact@2
+		  inputs:
+        buildType: 'current'
+        artifactName: 'manifests'
+        targetPath: '$(Pipeline.Workspace)/manifests'
+		- task: KubernetesManifest@0
+		  inputs:
+        action: 'createSecret'
+        kubernetesServiceConnection: 'K8S-Dev-SC'
+        namespace: 'dev'
+        secretType: 'dockerRegistry'
+        secretName: '$(myacrsecret)'
+        dockerRegistryEndpoint: 'bala-acr-SC'
+		- task: KubernetesManifest@0
+		  inputs:
+        action: 'deploy'
+        kubernetesServiceConnection: 'K8S-Dev-SC'
+        namespace: 'dev'
+        manifests: |
+          $(Pipeline.Workspace)/manifests/deployment.yml 
+          $(Pipeline.Workspace)/manifests/service.yml
+        containers: '$(acrdevurl)/$(imageRepo):$(tag)'
+        imagePullSecrets: '$(myacrsecret)'

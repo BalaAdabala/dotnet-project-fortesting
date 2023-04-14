@@ -1,0 +1,102 @@
+trigger:
+  - none
+pool:
+  vmImage: ubuntu-latest
+  
+variables:
+  - group: my-vars
+  - name: Database
+    value: $(MAIN_AUTHENTICATION_DATABASE_DB)
+  - name: Database-UserId
+    value: $(MAIN_AUTHENTICATION_DB_USER)
+  - name: vmImageName
+    value: 'ubuntu-latest'
+  - name: imageRepo
+    value: 'balaacr05oct'
+  - name: tag
+    value: 'latest'
+  - name: myacrsecret
+    value: "myacrsecret001"
+  - name: acrdevurl
+    value: 'balavenkat6871'
+
+stages:
+- stage: CI
+  jobs:
+  - job: publish
+    displayName: Publish image
+    continueOnError: false
+    steps:
+    - task: Docker@2
+      displayName: Build Docker image
+      inputs:
+        containerRegistry: 'My-DockerHub-Balavenkat'
+        repository: 'balavenkat6871/balaacr05oct'
+        command: 'build'
+        Dockerfile: '**/Dockerfile'
+        tags: 'latest'
+    - task: Docker@2
+      displayName: Push Docker image to ACR
+      inputs:
+        containerRegistry: 'My-DockerHub-Balavenkat'
+        repository: 'balavenkat6871/balaacr05oct'
+        command: 'push'
+        tags: 'latest'
+    - task: CopyFiles@2
+      inputs:
+        SourceFolder: 'kubernetes'
+        Contents: '**'
+        TargetFolder: '$(Pipeline.Workspace)/manifests'
+    - task: PublishBuildArtifacts@1
+      inputs:
+        PathtoPublish: '$(Pipeline.Workspace)/manifests'
+        ArtifactName: 'manifests'
+        publishLocation: 'Container'
+- stage: samplewebapp
+  jobs:
+  - deployment: Deploy
+    displayName: Deploy to samplewebapp
+    environment: 'samplewebapp'
+    variables:
+    - name: k8s-replicas
+      value: 1
+    - name: container-fqdn
+      value: main-fqdn
+    continueOnError: false
+    strategy:
+     runOnce:
+       deploy:
+        steps:
+        - checkout: self
+        - task: KubernetesManifest@0
+          displayName: Create secret
+          inputs:
+            action: 'createSecret'
+            kubernetesServiceConnection: 'samplewebapp-SC'
+            namespace: 'samplewebapp'
+            secretType: 'generic'
+            secretName: 'auth-samplewebapp-secrets'
+            secretArguments: '--from-literal=ASPNETCORE_ENVIRONMENT=''Main'' --from-literal=Database=$(MAIN_AUTHENTICATION_DATABASE_DB) --from-literal=Database-UserId=$(MAIN_AUTHENTICATION_DB_USER) --from-literal=LoggingLogLevel-Default=Debug'
+        - task: DownloadPipelineArtifact@2
+          inputs:
+            buildType: 'current'
+            artifactName: 'manifests'
+            targetPath: '$(Pipeline.Workspace)'
+        - task: KubernetesManifest@0
+          inputs:
+            action: 'createSecret'
+            kubernetesServiceConnection: 'samplewebapp-SC'
+            namespace: 'samplewebapp'
+            secretType: 'dockerRegistry'
+            secretName: '$(myacrsecret)'
+            dockerRegistryEndpoint: 'My-DockerHub-Balavenkat'
+        - task: KubernetesManifest@0
+          inputs:
+            action: 'deploy'
+            kubernetesServiceConnection: 'samplewebapp-SC'
+            namespace: 'samplewebapp'
+            manifests: |
+              $(Pipeline.Workspace)/manifests/deployment.yml 
+              $(Pipeline.Workspace)/manifests/service.yml
+            containers: '$(acrdevurl)/$(imageRepo):$(tag)'
+            imagePullSecrets: '$(myacrsecret)'
