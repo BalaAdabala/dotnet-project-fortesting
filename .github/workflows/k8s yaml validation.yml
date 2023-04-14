@@ -1,24 +1,20 @@
-name: K8S YAML Validation
-
+name: Docker Build
 on:
   push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
-
-  workflow_dispatch:
+    branches:
+      - main
 
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
-      - uses: actions/checkout@v2
+    - name: Checkout code
+      uses: actions/checkout@v2
+    - name: Build Docker image
+      uses: docker/build-push-action@v2
+      with:
+        context: .
+        file: Dockerfile
+        push: false
+        tags: sampleapp001:latest
 
-      - name: Install DaTree
-        run: curl https://get.datree.io | /bin/bash
-
-      - name: Scan with DaTree
-        run: datree test ./kubernetes/*.yml
-        env:
-          DATREE_TOKEN: ${{ secrets.DATREE_TOKEN }} 
